@@ -13,29 +13,67 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
   const [isDraggingStamp, setIsDraggingStamp] = useState(false);
   const [isDraggingSignature, setIsDraggingSignature] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [stampPosition, setStampPosition] = useState({ left: '', right: '10%', top: '20px' });
+  const [signaturePosition, setSignaturePosition] = useState({ left: '10%', top: '20px' });
   const stampRef = useRef<HTMLDivElement>(null);
   const signatureRef = useRef<HTMLDivElement>(null);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
-  // Initialize positions based on screen size
+  // Initialize positions based on screen size and localStorage
   useEffect(() => {
     const initializePositions = () => {
       if (typeof window === 'undefined') return;
       
       const isMobile = window.innerWidth <= 768;
       
-      if (signatureRef.current && !signatureRef.current.style.left) {
-        signatureRef.current.style.left = isMobile ? '5%' : '10%';
-        signatureRef.current.style.top = '20px';
+      // Load saved positions from localStorage
+      const savedStampPosition = localStorage.getItem('invoice-stamp-position');
+      const savedSignaturePosition = localStorage.getItem('invoice-signature-position');
+      
+      let stampPos, signaturePos;
+      
+      try {
+        stampPos = savedStampPosition ? JSON.parse(savedStampPosition) : null;
+        signaturePos = savedSignaturePosition ? JSON.parse(savedSignaturePosition) : null;
+      } catch (error) {
+        console.error('Error parsing saved positions:', error);
+        stampPos = null;
+        signaturePos = null;
       }
       
-      if (stampRef.current && !stampRef.current.style.left && !stampRef.current.style.right) {
-        if (isMobile) {
-          stampRef.current.style.right = '5%';
+      // Set default positions based on screen size if no saved positions
+      const defaultStampPosition = {
+        left: '',
+        right: isMobile ? '5%' : '10%',
+        top: '20px'
+      };
+      
+      const defaultSignaturePosition = {
+        left: isMobile ? '5%' : '10%',
+        top: '20px'
+      };
+      
+      const finalStampPosition = stampPos || defaultStampPosition;
+      const finalSignaturePosition = signaturePos || defaultSignaturePosition;
+      
+      setStampPosition(finalStampPosition);
+      setSignaturePosition(finalSignaturePosition);
+      
+      // Apply positions to elements
+      if (signatureRef.current) {
+        signatureRef.current.style.left = finalSignaturePosition.left;
+        signatureRef.current.style.top = finalSignaturePosition.top;
+      }
+      
+      if (stampRef.current) {
+        if (finalStampPosition.left) {
+          stampRef.current.style.left = finalStampPosition.left;
+          stampRef.current.style.right = 'auto';
         } else {
-          stampRef.current.style.right = '10%';
+          stampRef.current.style.right = finalStampPosition.right;
+          stampRef.current.style.left = 'auto';
         }
-        stampRef.current.style.top = '20px';
+        stampRef.current.style.top = finalStampPosition.top;
       }
     };
 
@@ -62,6 +100,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
       // Store original stamp and signature positions
       const originalStampStyles = stampRef.current ? {
         left: stampRef.current.style.left,
+        right: stampRef.current.style.right,
         top: stampRef.current.style.top
       } : null;
       
@@ -117,6 +156,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
       // Restore original stamp and signature positions
       if (stampRef.current && originalStampStyles) {
         stampRef.current.style.left = originalStampStyles.left;
+        stampRef.current.style.right = originalStampStyles.right;
         stampRef.current.style.top = originalStampStyles.top;
       }
       if (signatureRef.current && originalSignatureStyles) {
@@ -229,6 +269,17 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
       document.removeEventListener('touchend', handleMouseUp);
       document.body.style.cursor = 'default';
       document.body.style.userSelect = 'auto';
+      
+      // Save the new position to localStorage
+      if (stampElement) {
+        const newPosition = {
+          left: stampElement.style.left,
+          right: stampElement.style.right,
+          top: stampElement.style.top
+        };
+        setStampPosition(newPosition);
+        localStorage.setItem('invoice-stamp-position', JSON.stringify(newPosition));
+      }
     };
     
     document.body.style.cursor = 'grabbing';
@@ -284,6 +335,16 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
       document.removeEventListener('touchend', handleMouseUp);
       document.body.style.cursor = 'default';
       document.body.style.userSelect = 'auto';
+      
+      // Save the new position to localStorage
+      if (signatureElement) {
+        const newPosition = {
+          left: signatureElement.style.left,
+          top: signatureElement.style.top
+        };
+        setSignaturePosition(newPosition);
+        localStorage.setItem('invoice-signature-position', JSON.stringify(newPosition));
+      }
     };
     
     document.body.style.cursor = 'grabbing';
@@ -294,19 +355,61 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
     document.addEventListener('touchend', handleMouseUp);
   };
 
+  const resetPositions = () => {
+    const isMobile = window.innerWidth <= 768;
+    
+    const defaultStampPosition = {
+      left: '',
+      right: isMobile ? '5%' : '10%',
+      top: '20px'
+    };
+    
+    const defaultSignaturePosition = {
+      left: isMobile ? '5%' : '10%',
+      top: '20px'
+    };
+    
+    setStampPosition(defaultStampPosition);
+    setSignaturePosition(defaultSignaturePosition);
+    
+    // Clear localStorage
+    localStorage.removeItem('invoice-stamp-position');
+    localStorage.removeItem('invoice-signature-position');
+    
+    // Apply default positions to elements
+    if (signatureRef.current) {
+      signatureRef.current.style.left = defaultSignaturePosition.left;
+      signatureRef.current.style.top = defaultSignaturePosition.top;
+    }
+    
+    if (stampRef.current) {
+      stampRef.current.style.left = 'auto';
+      stampRef.current.style.right = defaultStampPosition.right;
+      stampRef.current.style.top = defaultStampPosition.top;
+    }
+  };
+
   return (
     <div className="flex flex-col space-y-4">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center export-button-container gap-4">
         <div className="text-xs sm:text-sm text-gray-600 flex items-center">
           <span>💡 Зөвлөмж: Тамга болон гарын үсгийг зөөхийн тулд чирж аваарай</span>
         </div>
-        <button 
-          onClick={exportToPdf} 
-          disabled={isExporting}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed w-full sm:w-auto"
-        >
-          {isExporting ? 'Боловсруулж байна...' : 'PDF-р Хадгалах'}
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={resetPositions}
+            className="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
+          >
+            Анхдагш байрлал
+          </button>
+          <button 
+            onClick={exportToPdf} 
+            disabled={isExporting}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed w-full sm:w-auto"
+          >
+            {isExporting ? 'Боловсруулж байна...' : 'PDF-р Хадгалах'}
+          </button>
+        </div>
       </div>
       <div ref={invoiceRef} className="invoice-container bg-white relative text-black" style={{ 
         width: '100%',
@@ -467,8 +570,8 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
                   : 'cursor-grab hover:opacity-90 z-10'
               }`}
               style={{ 
-                left: '10%', // Use percentage for mobile responsiveness
-                top: '20px',
+                left: signaturePosition.left || '10%',
+                top: signaturePosition.top || '20px',
                 width: `${Math.min(invoiceData.signaturePosition.width, 180)}px`, // Limit size on mobile
                 height: `${Math.min(invoiceData.signaturePosition.height, 90)}px`,
                 touchAction: 'none' // Prevent default touch behaviors
@@ -495,8 +598,9 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
                   : 'cursor-grab hover:opacity-90 z-10'
               }`}
               style={{ 
-                right: '10%', // Use right positioning for mobile responsiveness
-                top: '20px',
+                left: stampPosition.left || 'auto',
+                right: stampPosition.right || '10%',
+                top: stampPosition.top || '20px',
                 width: `${Math.min(invoiceData.stampPosition.width, 220)}px`, // Limit size on mobile
                 height: `${Math.min(invoiceData.stampPosition.height, 220)}px`,
                 touchAction: 'none' // Prevent default touch behaviors
