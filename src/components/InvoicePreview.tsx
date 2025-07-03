@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { InvoiceData } from '@/types/invoice';
@@ -17,24 +17,112 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
   const signatureRef = useRef<HTMLDivElement>(null);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
+  // Initialize positions based on screen size
+  useEffect(() => {
+    const initializePositions = () => {
+      if (typeof window === 'undefined') return;
+      
+      const isMobile = window.innerWidth <= 768;
+      
+      if (signatureRef.current && !signatureRef.current.style.left) {
+        signatureRef.current.style.left = isMobile ? '5%' : '10%';
+        signatureRef.current.style.top = '20px';
+      }
+      
+      if (stampRef.current && !stampRef.current.style.left && !stampRef.current.style.right) {
+        if (isMobile) {
+          stampRef.current.style.right = '5%';
+        } else {
+          stampRef.current.style.right = '10%';
+        }
+        stampRef.current.style.top = '20px';
+      }
+    };
+
+    initializePositions();
+    window.addEventListener('resize', initializePositions);
+    
+    return () => window.removeEventListener('resize', initializePositions);
+  }, []);
+
   const exportToPdf = async () => {
     if (!invoiceRef.current) return;
     
     setIsExporting(true);
     
     try {
-      // Configure html2canvas for better PDF output with exact sizing
+      // Store original styles for container
+      const originalStyles = {
+        width: invoiceRef.current.style.width,
+        maxWidth: invoiceRef.current.style.maxWidth,
+        padding: invoiceRef.current.style.padding,
+        margin: invoiceRef.current.style.margin
+      };
+      
+      // Store original stamp and signature positions
+      const originalStampStyles = stampRef.current ? {
+        left: stampRef.current.style.left,
+        top: stampRef.current.style.top
+      } : null;
+      
+      const originalSignatureStyles = signatureRef.current ? {
+        left: signatureRef.current.style.left,
+        top: signatureRef.current.style.top
+      } : null;
+      
+      // Temporarily set fixed dimensions for PDF generation
+      invoiceRef.current.style.width = '1000px';
+      invoiceRef.current.style.maxWidth = '1000px';
+      invoiceRef.current.style.padding = '30px';
+      invoiceRef.current.style.margin = '0 auto';
+      
+      // Reset signature and stamp to default positions for PDF
+      if (stampRef.current) {
+        // Convert right positioning to left for PDF
+        const containerWidth = 1000; // Fixed width for PDF
+        const stampWidth = Math.min(invoiceData.stampPosition.width, 220);
+        const rightPosition = containerWidth * 0.1; // 10% from right
+        stampRef.current.style.left = `${containerWidth - rightPosition - stampWidth}px`;
+        stampRef.current.style.right = 'auto';
+        stampRef.current.style.top = '20px';
+      }
+      if (signatureRef.current) {
+        const leftPosition = 1000 * 0.1; // 10% from left
+        signatureRef.current.style.left = `${leftPosition}px`;
+        signatureRef.current.style.top = '20px';
+      }
+      
+      // Force a reflow to apply the new styles
+      void invoiceRef.current.offsetHeight;
+      
+      // Configure html2canvas for better PDF output with fixed sizing
       const canvas = await html2canvas(invoiceRef.current, {
-        scale: 1.5, // Reduced scale for better fit
+        scale: 2, // Higher scale for better quality
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
-        width: invoiceRef.current.offsetWidth,
-        height: invoiceRef.current.offsetHeight,
+        width: 1000, // Fixed width for consistency
+        height: invoiceRef.current.scrollHeight,
         scrollX: 0,
         scrollY: 0,
         removeContainer: true
       });
+      
+      // Restore original styles
+      invoiceRef.current.style.width = originalStyles.width;
+      invoiceRef.current.style.maxWidth = originalStyles.maxWidth;
+      invoiceRef.current.style.padding = originalStyles.padding;
+      invoiceRef.current.style.margin = originalStyles.margin;
+      
+      // Restore original stamp and signature positions
+      if (stampRef.current && originalStampStyles) {
+        stampRef.current.style.left = originalStampStyles.left;
+        stampRef.current.style.top = originalStampStyles.top;
+      }
+      if (signatureRef.current && originalSignatureStyles) {
+        signatureRef.current.style.left = originalSignatureStyles.left;
+        signatureRef.current.style.top = originalSignatureStyles.top;
+      }
       
       const imgData = canvas.toDataURL('image/png', 1.0);
       const pdf = new jsPDF({
@@ -48,25 +136,25 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
       const pdfWidth = 210;
       const pdfHeight = 297;
       
-      // Calculate optimal sizing with smaller margins for better space usage
-      const imgWidthMM = (canvas.width * 25.4) / (96 * 1.5); // Adjusted for new scale
-      const imgHeightMM = (canvas.height * 25.4) / (96 * 1.5);
+      // Calculate dimensions based on fixed canvas size
+      const imgWidthMM = (canvas.width * 25.4) / (96 * 2); // Adjusted for scale 2
+      const imgHeightMM = (canvas.height * 25.4) / (96 * 2);
       
-      // Use very small margins for maximum zoom effect
-      const margin = 5; // Reduced from 8mm to 5mm for maximum content size
+      // Use small margins for maximum content size
+      const margin = 10;
       const availableWidth = pdfWidth - (margin * 2);
       const availableHeight = pdfHeight - (margin * 2);
       
-      // Calculate scale to fit content optimally - remove max limit
+      // Calculate scale to fit content optimally
       const scaleX = availableWidth / imgWidthMM;
       const scaleY = availableHeight / imgHeightMM;
-      const scale = Math.min(scaleX, scaleY); // Removed upper limit to allow natural scaling
+      const scale = Math.min(scaleX, scaleY, 1.2); // Limit maximum scale for readability
       
       const finalWidth = imgWidthMM * scale;
       const finalHeight = imgHeightMM * scale;
       
-      // Position with minimal margins
-      const xPosition = margin;
+      // Center the content
+      const xPosition = (pdfWidth - finalWidth) / 2;
       const yPosition = margin;
       
       pdf.addImage(imgData, 'PNG', xPosition, yPosition, finalWidth, finalHeight, '', 'FAST');
@@ -94,15 +182,13 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
     const stampElement = stampRef.current;
     if (!stampElement) return;
 
-    // Convert right positioning to left positioning before drag starts
-    if (stampElement.style.right && !stampElement.style.left) {
-      const rect = stampElement.getBoundingClientRect();
-      const parentRect = invoiceRef.current?.getBoundingClientRect();
-      if (parentRect) {
-        const leftPosition = rect.left - parentRect.left;
-        stampElement.style.left = `${leftPosition}px`;
-        stampElement.style.right = 'auto';
-      }
+    // Convert any percentage or right positioning to left positioning before drag starts
+    const rect = stampElement.getBoundingClientRect();
+    const parentRect = invoiceRef.current?.getBoundingClientRect();
+    if (parentRect) {
+      const leftPosition = rect.left - parentRect.left;
+      stampElement.style.left = `${leftPosition}px`;
+      stampElement.style.right = 'auto';
     }
 
     // Get initial position from mouse or touch
@@ -223,23 +309,23 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
         </button>
       </div>
       <div ref={invoiceRef} className="invoice-container bg-white relative text-black" style={{ 
-        width: '100%', // Changed from fixed 1000px to responsive
+        width: '100%',
         maxWidth: '1000px',
         margin: '0 auto', 
         minHeight: 'auto',
-        padding: '20px 30px', // Reduced padding for mobile
+        padding: '15px 20px', // Reduced padding for mobile
         fontFamily: 'Arial, sans-serif',
         boxSizing: 'border-box'
       }}>
         {/* Top Banner for Michyaki - Full width with no margins */}
         {invoiceData.claimant?.bannerImage && (
-          <div className="w-full -mt-8 mb-6" style={{ width: 'calc(100% + 60px)', marginLeft: '-30px', marginRight: '-30px' }}>
+          <div className="w-full -mt-4 mb-6" style={{ width: 'calc(100% + 40px)', marginLeft: '-20px', marginRight: '-20px' }}>
             <img 
               src={invoiceData.claimant.bannerImage} 
               alt="Company Banner" 
               className="w-full h-auto"
               style={{ 
-                maxHeight: '150px', // Reduced for mobile
+                maxHeight: '120px', // Reduced for mobile
                 width: '100%',
                 display: 'block',
                 margin: '0',
@@ -327,35 +413,35 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
         
         {/* Items Table */}
         <div className="flex justify-center mb-6 overflow-x-auto">
-          <table className="border-collapse text-black min-w-full sm:min-w-0" style={{ fontSize: '8pt', width: '100%', maxWidth: '70%', fontFamily: 'Times, "Times New Roman", serif' }}>
+          <table className="border-collapse text-black w-full" style={{ fontSize: '8pt', maxWidth: '70%', fontFamily: 'Times, "Times New Roman", serif' }}>
             <thead>
               <tr>
-                <th className="border-2 border-black p-1 sm:p-2 bg-white text-center font-bold text-black" style={{width: '60%', fontSize: '9pt'}}>Гүйлгээний утга / Description</th>
-                <th className="border-2 border-black p-1 sm:p-2 bg-white text-center font-bold text-black" style={{width: '20%', fontSize: '9pt'}}>Хугацаа / Period</th>
-                <th className="border-2 border-black p-1 sm:p-2 bg-white text-center font-bold text-black" style={{width: '20%', fontSize: '9pt'}}>Үнэ / Price</th>
+                <th className="border-2 border-black p-2 bg-white text-center font-bold text-black" style={{width: '60%', fontSize: '9pt'}}>Гүйлгээний утга / Description</th>
+                <th className="border-2 border-black p-2 bg-white text-center font-bold text-black" style={{width: '20%', fontSize: '9pt'}}>Хугацаа / Period</th>
+                <th className="border-2 border-black p-2 bg-white text-center font-bold text-black" style={{width: '20%', fontSize: '9pt'}}>Үнэ / Price</th>
               </tr>
             </thead>
             <tbody>
               {invoiceData.items.map((item, index: number) => (
                 <tr key={index}>
-                  <td className="border border-black p-1 sm:p-2 text-left text-black" style={{ fontSize: '8pt' }}>{item.description}</td>
-                  <td className="border border-black p-1 sm:p-2 text-center text-black" style={{ fontSize: '8pt' }}>{item.date || item.period || ''}</td>
-                  <td className="border border-black p-1 sm:p-2 text-right text-black" style={{ fontSize: '8pt' }}>{item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="border border-black p-2 text-left text-black" style={{ fontSize: '8pt' }}>{item.description}</td>
+                  <td className="border border-black p-2 text-center text-black" style={{ fontSize: '8pt' }}>{item.date || item.period || ''}</td>
+                  <td className="border border-black p-2 text-right text-black" style={{ fontSize: '8pt' }}>{item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 </tr>
               ))}
               
               {/* VAT Row */}
               <tr>
-                <td className="border border-black p-1 sm:p-2 text-left text-black font-bold" style={{ fontSize: '8pt' }}>VAT / НӨАТ</td>
-                <td className="border border-black p-1 sm:p-2 text-center text-black"></td>
-                <td className="border border-black p-1 sm:p-2 text-right text-black font-bold" style={{ fontSize: '8pt' }}>{(invoiceData.totalAmount * 0.1).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="border border-black p-2 text-left text-black font-bold" style={{ fontSize: '8pt' }}>VAT / НӨАТ</td>
+                <td className="border border-black p-2 text-center text-black"></td>
+                <td className="border border-black p-2 text-right text-black font-bold" style={{ fontSize: '8pt' }}>{(invoiceData.totalAmount * 0.1).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
               
               {/* Grand Total Row */}
               <tr className="border-2 border-black font-bold">
-                <td className="border-2 border-black p-1 sm:p-2 text-left text-black font-bold" style={{ fontSize: '9pt' }}>Нийт дүн/ Grand total</td>
-                <td className="border-2 border-black p-1 sm:p-2 text-center text-black font-bold"></td>
-                <td className="border-2 border-black p-1 sm:p-2 text-right text-black font-bold" style={{ fontSize: '9pt' }}>{(invoiceData.totalAmount * 1.1).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="border-2 border-black p-2 text-left text-black font-bold" style={{ fontSize: '9pt' }}>Нийт дүн/ Grand total</td>
+                <td className="border-2 border-black p-2 text-center text-black font-bold"></td>
+                <td className="border-2 border-black p-2 text-right text-black font-bold" style={{ fontSize: '9pt' }}>{(invoiceData.totalAmount * 1.1).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
             </tbody>
           </table>
@@ -381,10 +467,10 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
                   : 'cursor-grab hover:opacity-90 z-10'
               }`}
               style={{ 
-                left: '50px', 
+                left: '10%', // Use percentage for mobile responsiveness
                 top: '20px',
-                width: `${invoiceData.signaturePosition.width}px`,
-                height: `${invoiceData.signaturePosition.height}px`,
+                width: `${Math.min(invoiceData.signaturePosition.width, 180)}px`, // Limit size on mobile
+                height: `${Math.min(invoiceData.signaturePosition.height, 90)}px`,
                 touchAction: 'none' // Prevent default touch behaviors
               }}
               onMouseDown={handleSignatureDragStart}
@@ -409,10 +495,10 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
                   : 'cursor-grab hover:opacity-90 z-10'
               }`}
               style={{ 
-                left: '550px', 
+                right: '10%', // Use right positioning for mobile responsiveness
                 top: '20px',
-                width: `${invoiceData.stampPosition.width}px`,
-                height: `${invoiceData.stampPosition.height}px`,
+                width: `${Math.min(invoiceData.stampPosition.width, 220)}px`, // Limit size on mobile
+                height: `${Math.min(invoiceData.stampPosition.height, 220)}px`,
                 touchAction: 'none' // Prevent default touch behaviors
               }}
               onMouseDown={handleStampDragStart}
@@ -430,13 +516,13 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
 
         {/* Footer for Michyaki - Full width with no margins */}
         {invoiceData.claimant?.footerImage && (
-          <div className="w-full mt-6" style={{ width: 'calc(100% + 60px)', marginLeft: '-30px', marginRight: '-30px' }}>
+          <div className="w-full mt-6" style={{ width: 'calc(100% + 40px)', marginLeft: '-20px', marginRight: '-20px' }}>
             <img 
               src={invoiceData.claimant.footerImage} 
               alt="Company Footer" 
               className="w-full h-auto"
               style={{ 
-                maxHeight: '120px', // Reduced for mobile
+                maxHeight: '100px', // Reduced for mobile
                 width: '100%',
                 display: 'block',
                 margin: '0',
@@ -453,16 +539,37 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
         <style jsx>{`
           @media print {
             .invoice-container {
-              padding: 20px;
+              padding: 30px;
               border: none;
-              width: 100%;
-              max-width: 100%;
+              width: 1000px;
+              max-width: 1000px;
               margin: 0;
               box-sizing: border-box;
             }
             
             .export-button-container {
               display: none;
+            }
+          }
+          
+          @media (max-width: 768px) {
+            .invoice-container {
+              padding: 15px 20px !important;
+              font-size: 12px;
+            }
+            
+            table {
+              font-size: 10px !important;
+            }
+            
+            th, td {
+              padding: 8px !important;
+            }
+            
+            /* Limit stamp and signature sizes on mobile */
+            .invoice-container .absolute img {
+              max-width: 150px !important;
+              max-height: 150px !important;
             }
           }
         `}</style>
