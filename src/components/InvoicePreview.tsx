@@ -88,7 +88,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ invoiceData }) => {
       }
       if (signatureRef.current) {
         const leftPosition = 1000 * 0.1; // 10% from left
-        signatureRef.current.style.left = `${leftPosition}px`;
+        signatureRef.current.style.left = `${leftPosition}px`; 
         signatureRef.current.style.top = '20px';
       }
       
