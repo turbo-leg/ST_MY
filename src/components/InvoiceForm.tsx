@@ -1,53 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-
-interface Item {
-  description: string;
-  date: string;
-  period: string;
-  amount: number;
-}
-
-interface InvoiceData {
-  invoiceNumber: string;
-  invoiceDate: string;
-  claimant: {
-    companyName: string;
-    companyNameEn: string;
-    regNumber: string;
-    address: string;
-    addressEn: string;
-    phone: string;
-    bankName: string;
-    bankNameEn: string;
-    bankAddress: string;
-    bankAddressEn: string;
-    accountNumber: string;
-  };
-  payer: {
-    companyName: string;
-    companyNameEn: string;
-    regNumber: string;
-    address: string;
-    addressEn: string;
-    phone: string;
-  };
-  items: Item[];
-  totalAmount: number;
-  accountant: string;
-  stampImage: string | null;
-  signatureImage: string | null;
-  stampPosition: { width: number; height: number };
-  signaturePosition: { width: number; height: number };
-}
+import React, { useState, useEffect, useCallback } from 'react';
+import { InvoiceData, InvoiceItem, Company } from '@/types/invoice';
 
 interface InvoiceFormProps {
   invoiceData: InvoiceData;
   onInvoiceDataChange: (data: InvoiceData) => void;
   claimantOptions: {
-    michyaki: any;
-    sti: any;
+    michyaki: Company;
+    sti: Company;
   };
   onClaimantChange: (companyKey: 'michyaki' | 'sti') => void;
 }
@@ -64,23 +25,28 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
     setLocalData(invoiceData);
   }, [invoiceData]);
 
-  const calculateTotal = () => {
+  const calculateTotal = useCallback(() => {
     const total = localData.items.reduce((sum, item) => sum + item.amount, 0);
     const updatedData = { ...localData, totalAmount: total };
     setLocalData(updatedData);
     onInvoiceDataChange(updatedData);
-  };
+  }, [localData, onInvoiceDataChange]);
 
   useEffect(() => {
     calculateTotal();
-  }, [localData.items]);
+  }, [localData.items, calculateTotal]);
 
   const handleInputChange = (section: keyof InvoiceData, field: string, value: string) => {
     const updatedData = { ...localData };
     if (section === 'claimant' || section === 'payer') {
-      (updatedData[section] as any)[field] = value;
-    } else {
-      (updatedData as any)[field] = value;
+      // Type assertion is safe here as we know these are objects with string properties
+      (updatedData[section] as unknown as Record<string, string>)[field] = value;
+    } else if (section === 'invoiceNumber') {
+      updatedData.invoiceNumber = value;
+    } else if (section === 'invoiceDate') {
+      updatedData.invoiceDate = value;
+    } else if (section === 'accountant') {
+      updatedData.accountant = value;
     }
     setLocalData(updatedData);
     onInvoiceDataChange(updatedData);
@@ -96,7 +62,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
     return errors;
   };
 
-  const handleItemChange = (index: number, field: keyof Item, value: string) => {
+  const handleItemChange = (index: number, field: keyof InvoiceItem, value: string) => {
     const updatedItems = [...localData.items];
     if (field === 'amount') {
       updatedItems[index][field] = parseFloat(value) || 0;
